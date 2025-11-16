@@ -5,9 +5,9 @@ import os
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials 
+from googleapiclient.errors import HttpError 
 import base64
-import json
-from googleapiclient.errors import HttpError # Used for catching Google API errors
+import json # Kept for potential use, though not strictly needed here
 
 # Load env
 load_dotenv()
@@ -21,7 +21,6 @@ SERVICE_KEY_PATH = "service_account.json"
 
 if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
     try:
-        # Decodes the Base64 key string from the Render environment variable
         decoded = base64.b64decode(os.getenv("GOOGLE_SERVICE_KEY_BASE64"))
         with open(SERVICE_KEY_PATH, "wb") as f:
             f.write(decoded)
@@ -39,25 +38,20 @@ except Exception as e:
 DRIVE_SERVICE = None
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+# FIX: Simplified CORS to allow all origins universally.
+# This prevents the "Failed to connect to backend" error.
+CORS(app) 
 
-# Standard CORS headers (already handled by Flask-CORS but kept for safety)
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
-    return response
+# --- REMOVED: The conflicting @app.after_request function ---
+# The previous custom headers block has been removed as CORS(app) handles it better.
 
 
 # Google Drive Configuration
-# Using metadata scope for file listing
 SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"] 
 REQUIRED_LABELS = ["photo", "aadhar", "community", "marksheet", "tc"]
 FILE_CODE_MAP = {
     "s1": "photo", "s2": "aadhar", "s3": "community", "s4": "marksheet", "s5": "tc"
 }
-# Service Account Email (Add this as a global constant for error messaging)
 SERVICE_ACCOUNT_EMAIL = "drive-scanner-sa@dataverification-478012.iam.gserviceaccount.com"
 
 
@@ -136,7 +130,7 @@ def verify():
         supabase.table("student_verifications").insert(record).execute()
         return jsonify({"result": record})
 
-    # FIX: Add specific error handling for Google API Permission Denied (403)
+    # Catch Google API Permission Denied (403) error and return a clear message
     except HttpError as e:
         if e.resp.status == 403:
             return jsonify({"error": f"Permission Denied. Please share the Drive folder with our verification account: {SERVICE_ACCOUNT_EMAIL}"}), 403
@@ -145,8 +139,6 @@ def verify():
     except Exception as e:
         return jsonify({"error": f"Server Error: {str(e)}"}), 500
 
-
-# --- Remaining Routes (Students, Refresh, Delete) are unchanged in logic ---
 
 @app.route("/students", methods=["GET"])
 def get_all_students():
