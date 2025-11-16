@@ -1,24 +1,15 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Python/Backend Files
+__pycache__/
+*.pyc
+.env
+token.json  # Crucial! Never upload authentication tokens
+backend/token.json      # <--- ADDED 'backend/' PREFIX
+backend/credentials.json # <--- ADDED 'backend/' PREFIX (MUST BE INCLUDED NOW)
+.venv/
+venv/
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Node/Frontend Files (if using npm/yarn)
+/node_modules
+/dist
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+backend/credentials.json
