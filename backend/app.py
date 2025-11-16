@@ -4,9 +4,12 @@ from supabase import create_client
 import os
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials
+# Use service_account credentials for server deployment
+from google.oauth2.service_account import Credentials 
 import base64
 import json
+import http.client # Needed for potential Google API transport fixes (good practice)
+import google.auth.transport.requests # Used for token handling (good practice)
 
 # Load env
 load_dotenv()
@@ -16,7 +19,8 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 # -------------------------
 # Load service account key from Base64 (Render)
 # -------------------------
-SERVICE_KEY_PATH = "service_account.json"
+# We write the key file locally so the Google library can find it
+SERVICE_KEY_PATH = "service_account.json" 
 
 if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
     print("Detected Base64 Google service key in environment... decoding.")
@@ -27,13 +31,16 @@ if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
             f.write(decoded)
         print("Service account key written successfully.")
     except Exception as e:
+        # This will happen if the Base64 key is invalid
         print("Failed to decode Base64 key:", e)
 else:
+    # This will happen on Render if the variable is missing, or locally if not set
     print("WARNING: GOOGLE_SERVICE_KEY_BASE64 not found in Render Env!!")
 
 
 # Supabase client
 try:
+    # This connection attempt happens at startup
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     print("Supabase connected.")
 except Exception as e:
@@ -56,8 +63,9 @@ def add_cors_headers(response):
     return response
 
 
-# Google Drive
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# Google Drive Configuration
+# FIX: Use metadata scope, which is better suited for just reading names/IDs than drive.readonly
+SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"] 
 
 REQUIRED_LABELS = ["photo", "aadhar", "community", "marksheet", "tc"]
 
@@ -76,6 +84,7 @@ FILE_CODE_MAP = {
 def authenticate_drive_service():
     print("Authenticating Google Drive...")
 
+    # Check if the service account file was successfully created from the environment variable
     if not os.path.exists(SERVICE_KEY_PATH):
         raise Exception("service_account.json not found! Base64 key not loaded.")
 
@@ -88,6 +97,10 @@ def authenticate_drive_service():
 
 
 def scan_drive_folder(folder_id: str):
+    """
+    Scans a Google Drive folder using the globally initialized service (DRIVE_SERVICE).
+    Uses dual detection (label or code) logic.
+    """
     global DRIVE_SERVICE
 
     if DRIVE_SERVICE is None:
@@ -104,10 +117,12 @@ def scan_drive_folder(folder_id: str):
     found_labels = set()
 
     for file_name in files:
+        # Check 1: Label match
         for label in REQUIRED_LABELS:
             if label in file_name:
                 found_labels.add(label)
 
+        # Check 2: Code prefix match
         for code, label in FILE_CODE_MAP.items():
             if file_name.startswith(code):
                 found_labels.add(label)
@@ -165,7 +180,8 @@ def verify():
         return jsonify({"result": record})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Return a structured error response for debugging
+        return jsonify({"error": f"Verification failed: {str(e)}"}), 500
 
 
 @app.route("/students", methods=["GET"])
@@ -207,7 +223,7 @@ def refresh_student(serial_no):
         return jsonify({"updated": {**student, **updated}})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Refresh failed: {str(e)}"}), 500
 
 
 @app.route("/delete/<serial_no>", methods=["DELETE"])
@@ -225,8 +241,11 @@ def delete_student(serial_no):
 
 if __name__ == "__main__":
     try:
+        # Initialize Google Drive Service at startup
         DRIVE_SERVICE = authenticate_drive_service()
         print("Service Account Loaded: Google Drive Connected ✔")
+        
+        # Run Flask app on host 0.0.0.0 for external access
         app.run(debug=True, host="0.0.0.0")
     except Exception as e:
-        print("CRITICAL ERROR:", e)
+        print("CRITICAL ERROR: Failed to start application or authenticate Google Drive:", e)
