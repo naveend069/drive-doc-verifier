@@ -1,7 +1,7 @@
 // vite.config.ts
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc'; // Assuming this is your plugin
-import * as path from 'path'; // <--- NEW IMPORT NEEDED
+import react from '@vitejs/plugin-react-swc';
+import * as path from 'path'; // <--- Ensure this import is present if you use 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -9,11 +9,10 @@ export default defineConfig({
   
   // *** ADD THIS RESOLVE BLOCK ***
   resolve: {
-    // This tells Vite to handle imports that normally point to node_modules
-    // by resolving them to the absolute path from the current directory.
     alias: {
-      'axios': path.resolve(__dirname, 'node_modules/axios/index.js'),
-    }
-  }
+      // This tells Rollup that when it sees @/, it should look inside the src/ folder.
+      '@': path.resolve(__dirname, './src'), 
+    },
+  },
   // ******************************
 });
