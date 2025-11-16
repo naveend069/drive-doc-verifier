@@ -7,7 +7,8 @@ from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials 
 from googleapiclient.errors import HttpError 
 import base64
-import json # Kept for potential use, though not strictly needed here
+import json 
+import sys # Added for error debugging (optional)
 
 # Load env
 load_dotenv()
@@ -25,7 +26,7 @@ if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
         with open(SERVICE_KEY_PATH, "wb") as f:
             f.write(decoded)
     except Exception as e:
-        print("CRITICAL: Failed to decode Base64 key:", e)
+        print(f"CRITICAL: Base64 decoding failed: {e}", file=sys.stderr)
         
 # Supabase client
 try:
@@ -39,12 +40,9 @@ DRIVE_SERVICE = None
 
 app = Flask(__name__)
 # FIX: Simplified CORS to allow all origins universally.
-# This prevents the "Failed to connect to backend" error.
 CORS(app) 
 
-# --- REMOVED: The conflicting @app.after_request function ---
-# The previous custom headers block has been removed as CORS(app) handles it better.
-
+# --- REMOVED THE CONFLICTING @app.after_request BLOCK ---
 
 # Google Drive Configuration
 SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"] 
@@ -130,13 +128,19 @@ def verify():
         supabase.table("student_verifications").insert(record).execute()
         return jsonify({"result": record})
 
-    # Catch Google API Permission Denied (403) error and return a clear message
+    # FIX: Enhanced error handling for Google API issues
     except HttpError as e:
         if e.resp.status == 403:
-            return jsonify({"error": f"Permission Denied. Please share the Drive folder with our verification account: {SERVICE_ACCOUNT_EMAIL}"}), 403
-        return jsonify({"error": f"API Error: {str(e)}"}), 500
+            # Specific 403 error returned to frontend with instructions
+            return jsonify({"error": f"Permission Denied (403). Please share the Drive folder with our verification account: {SERVICE_ACCOUNT_EMAIL}"}), 403
+        if e.resp.status == 404:
+            return jsonify({"error": "Drive Folder Not Found or Link is Bad."}), 400
+        
+        # General API HttpError
+        return jsonify({"error": f"Google API Error ({e.resp.status}): {str(e.content.decode())}"}), 500
     
     except Exception as e:
+        # Catch-all for low-level server errors (e.g., failed DB connection, unhandled exception)
         return jsonify({"error": f"Server Error: {str(e)}"}), 500
 
 
