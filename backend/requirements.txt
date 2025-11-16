@@ -1,2 +1,9 @@
-flask
-flask-cors
+# Minimal Dependencies for Flask API on Render
+Flask==3.1.0
+gunicorn
+supabase==2.24.0
+python-dotenv==1.0.1
+google-api-python-client==2.162.0
+google-auth==2.38.0
+google-auth-oauthlib==1.2.3
+requests==2.32.3
