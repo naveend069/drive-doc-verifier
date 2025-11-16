@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
-const API = "http://127.0.0.1:5000";
+// In src/pages/Index.tsx
+const API = "https://drive-doc-verifier.onrender.com";
 
 interface VerifyResult {
   name: string;
