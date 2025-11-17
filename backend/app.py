@@ -4,11 +4,11 @@ from supabase import create_client
 import os
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials 
-from googleapiclient.errors import HttpError 
+from google.oauth2.service_account import Credentials
+from googleapiclient.errors import HttpError
 import base64
-import json 
-import sys # Added for error debugging (optional)
+import json
+import sys
 
 # Load env
 load_dotenv()
@@ -18,7 +18,7 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 # -------------------------
 # Load Service Account Key from Base64 (Render)
 # -------------------------
-SERVICE_KEY_PATH = "service_account.json" 
+SERVICE_KEY_PATH = "service_account.json"
 
 if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
     try:
@@ -27,7 +27,7 @@ if os.getenv("GOOGLE_SERVICE_KEY_BASE64"):
             f.write(decoded)
     except Exception as e:
         print(f"CRITICAL: Base64 decoding failed: {e}", file=sys.stderr)
-        
+
 # Supabase client
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -35,17 +35,14 @@ except Exception as e:
     print(f"Supabase Client Error: {e}")
     supabase = None
 
-# Global Drive Service initialized once
+# Google Drive service (will be initialized later)
 DRIVE_SERVICE = None
 
 app = Flask(__name__)
-# FIX: Simplified CORS to allow all origins universally.
-CORS(app) 
-
-# --- REMOVED THE CONFLICTING @app.after_request BLOCK ---
+CORS(app)
 
 # Google Drive Configuration
-SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"] 
+SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
 REQUIRED_LABELS = ["photo", "aadhar", "community", "marksheet", "tc"]
 FILE_CODE_MAP = {
     "s1": "photo", "s2": "aadhar", "s3": "community", "s4": "marksheet", "s5": "tc"
@@ -60,6 +57,15 @@ def authenticate_drive_service():
 
     creds = Credentials.from_service_account_file(SERVICE_KEY_PATH, scopes=SCOPES)
     return build("drive", "v3", credentials=creds)
+
+
+# 🔥 IMPORTANT FIX:
+# Initialize Drive for Gunicorn workers (Render)
+try:
+    DRIVE_SERVICE = authenticate_drive_service()
+    print("Google Drive initialized for Gunicorn workers ✔")
+except Exception as e:
+    print("FAILED TO INITIALIZE GOOGLE DRIVE:", e)
 
 
 def scan_drive_folder(folder_id: str):
@@ -81,6 +87,7 @@ def scan_drive_folder(folder_id: str):
         for label in REQUIRED_LABELS:
             if label in file_name:
                 found_labels.add(label)
+
         for code, label in FILE_CODE_MAP.items():
             if file_name.startswith(code):
                 found_labels.add(label)
@@ -128,19 +135,15 @@ def verify():
         supabase.table("student_verifications").insert(record).execute()
         return jsonify({"result": record})
 
-    # FIX: Enhanced error handling for Google API issues
     except HttpError as e:
         if e.resp.status == 403:
-            # Specific 403 error returned to frontend with instructions
-            return jsonify({"error": f"Permission Denied (403). Please share the Drive folder with our verification account: {SERVICE_ACCOUNT_EMAIL}"}), 403
+            return jsonify({"error": f"Permission Denied (403). Share the folder with: {SERVICE_ACCOUNT_EMAIL}"}), 403
         if e.resp.status == 404:
-            return jsonify({"error": "Drive Folder Not Found or Link is Bad."}), 400
-        
-        # General API HttpError
-        return jsonify({"error": f"Google API Error ({e.resp.status}): {str(e.content.decode())}"}), 500
-    
+            return jsonify({"error": "Drive Folder Not Found"}), 400
+
+        return jsonify({"error": f"Google API Error ({e.resp.status})"}), 500
+
     except Exception as e:
-        # Catch-all for low-level server errors (e.g., failed DB connection, unhandled exception)
         return jsonify({"error": f"Server Error: {str(e)}"}), 500
 
 
@@ -158,6 +161,7 @@ def refresh_student(serial_no):
     try:
         resp = supabase.table("student_verifications").select("*").eq("serial_no", serial_no).execute()
         rows = resp.data or []
+
         if not rows:
             return jsonify({"error": "Student not found"}), 404
 
@@ -175,6 +179,7 @@ def refresh_student(serial_no):
             "missing_files": res["missing_files"],
             "status": res["status"],
         }
+
         supabase.table("student_verifications").update(updated).eq("serial_no", serial_no).execute()
         return jsonify({"updated": {**student, **updated}})
 
@@ -182,7 +187,7 @@ def refresh_student(serial_no):
         if e.resp.status == 403:
             return jsonify({"error": f"Permission Denied. Share with: {SERVICE_ACCOUNT_EMAIL}"}), 403
         return jsonify({"error": f"API Error: {str(e)}"}), 500
-        
+
     except Exception as e:
         return jsonify({"error": f"Refresh failed: {str(e)}"}), 500
 
@@ -199,12 +204,11 @@ def delete_student(serial_no):
 
 
 if __name__ == "__main__":
+    # (Optional) re-init for local
     try:
-        # Initialize Google Drive Service at startup
         DRIVE_SERVICE = authenticate_drive_service()
-        print("Service Account Loaded: Google Drive Connected ✔")
-        
-        # Run Flask app on host 0.0.0.0 for external access
-        app.run(debug=True, host="0.0.0.0")
+        print("Google Drive Connected Locally ✔")
     except Exception as e:
-        print("CRITICAL ERROR: Failed to start application or authenticate Google Drive:", e)
+        print("CRITICAL DRIVE INIT ERROR:", e)
+
+    app.run(debug=True, host="0.0.0.0")
